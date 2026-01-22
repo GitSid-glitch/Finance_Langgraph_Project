@@ -1,7 +1,7 @@
-import json
-from app.graph import build_graph
 from dotenv import load_dotenv
 load_dotenv()
+import json
+from app.graph import build_graph
 with open("data/sample_transactions.json") as trn:
     transactions = json.load(trn)
 app = build_graph()
