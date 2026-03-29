@@ -2,7 +2,6 @@ from app.state import FinanceState
 def transaction_agent(state: FinanceState) -> FinanceState:
     query = state.get("user_query", "").lower()
     transactions = state.get("transactions", [])
-
     if not transactions:
         state["response"] = "No transaction data available."
         return state
