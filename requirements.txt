@@ -4,3 +4,6 @@ langchain-groq
 streamlit
 typing-extensions
 python-dotenv
+pandas 
+pdfplumber 
+openpyxl
