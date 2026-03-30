@@ -1,8 +1,17 @@
-from typing import TypedDict, List, Dict
-class FinanceState(TypedDict):
+from typing import Any, Dict, List, TypedDict
+class FinanceState(TypedDict, total=False):
     user_query: str
-    intent: str
-    transactions: List[Dict]
-    risk_score: float
+    transactions: List[Dict[str, Any]]
+    summary: Dict[str, Any]
+    profile: Dict[str, Any]
+    next_action: str
+    operation: str
+    parameters: Dict[str, Any]
+    clarification_question: str
+    trace: List[Dict[str, Any]]
+    step: int
+    max_steps: int
+    done: bool
+    observation: str
     response: str
-    memory: List[str]
+    memory: List[Dict[str, str]]
