@@ -1,72 +1,97 @@
-import streamlit as st
 import json
 import pandas as pd
+import streamlit as st
 from dotenv import load_dotenv
-load_dotenv()
 from app.graph import build_graph
-from app.tools.data_processor import parse_file, dataframe_to_transactions
+from app.tools.data_processor import dataframe_to_transactions, parse_file
+load_dotenv()
+st.set_page_config(page_title="Finance LangGraph Assistant", layout="wide")
+if "transactions" not in st.session_state:
+    st.session_state.transactions = []
+if "memory" not in st.session_state:
+    st.session_state.memory = []
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 @st.cache_resource
 def get_graph():
     return build_graph()
 app = get_graph()
-st.set_page_config(page_title="Finance AI Assistant", layout="wide")
-
-st.title("💰 Finance AI Assistant")
-st.write("Upload your financial file (CSV, Excel, PDF, JSON) or paste JSON data.")
-uploaded_file = st.file_uploader(
-    "Upload financial file",
-    type=["json", "csv", "xlsx", "pdf"]
-)
-
-manual_input = st.text_area(
-    "Or paste transaction data (JSON format)",
-    placeholder='[{"id":1,"amount":5000},{"id":2,"amount":120000}]'
-)
-transactions = None
-if uploaded_file is not None:
+st.title("💰 Finance LangGraph Assistant")
+st.caption("Iterative planner–executor graph for financial reasoning.")
+with st.sidebar:
+    st.header("Data Input")
+    uploaded_file = st.file_uploader(
+        "Upload CSV, Excel, PDF, or JSON",
+        type=["csv", "xlsx", "pdf", "json"],
+    )
+    load_file = st.button("Load uploaded file")
+    st.divider()
+    manual_text = st.text_area(
+        "Or paste JSON data",
+        placeholder='[{"date":"2024-01-01","category":"Food","amount":500,"type":"debit"}]',
+        height=180,
+    )
+    load_manual = st.button("Use pasted JSON")
+    st.divider()
+    if st.button("Clear conversation"):
+        st.session_state.memory = []
+        st.session_state.chat_history = []
+def reset_for_new_data():
+    st.session_state.memory = []
+    st.session_state.chat_history = []
+if load_file and uploaded_file is not None:
     try:
-        transactions = parse_file(uploaded_file)
-        st.success(f"Loaded {len(transactions)} transactions from file")
+        st.session_state.transactions = parse_file(uploaded_file)
+        reset_for_new_data()
+        st.sidebar.success(f"Loaded {len(st.session_state.transactions)} transactions.")
     except Exception as e:
-        st.error(f"Error processing file: {e}")
-        st.stop()
-elif manual_input.strip():
+        st.sidebar.error(f"File load failed: {e}")
+
+if load_manual and manual_text.strip():
     try:
-        raw_data = json.loads(manual_input)
+        raw = json.loads(manual_text)
 
-        df = pd.DataFrame(raw_data)
-        transactions = dataframe_to_transactions(df)
-
-        st.success(f"Loaded {len(transactions)} transactions from text input")
-
+        if isinstance(raw, dict):
+            for key in ["transactions", "data", "rows", "items"]:
+                if key in raw and isinstance(raw[key], list):
+                    raw = raw[key]
+                    break
+        if not isinstance(raw, list):
+            raise ValueError("Paste a JSON list or a JSON object containing a transactions list.")
+        st.session_state.transactions = dataframe_to_transactions(pd.DataFrame(raw))
+        reset_for_new_data()
+        st.sidebar.success(f"Loaded {len(st.session_state.transactions)} transactions.")
     except Exception as e:
-        st.error(f"Invalid JSON: {e}")
-        st.stop()
-if transactions is not None and len(transactions) > 0:
-    st.subheader("📄 Processed Transactions Preview")
-    st.json(transactions[:10])
-    st.write(f"Total Transactions: {len(transactions)}")
+        st.sidebar.error(f"JSON load failed: {e}")
+
+if st.session_state.transactions:
+    with st.expander("Preview loaded data", expanded=False):
+        st.write(f"Transactions loaded: {len(st.session_state.transactions)}")
+        st.json(st.session_state.transactions[:10])
 else:
-    st.info("Please upload a file or paste transaction data to begin.")
-st.subheader("💬 Ask a Question")
-user_query = st.text_input("Enter your query:")
+    st.info("Load a file or paste JSON to begin.")
 
-if st.button("Run Analysis"):
-    if transactions is None or len(transactions) == 0:
-        st.warning("Please upload or input data first")
+for msg in st.session_state.chat_history:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+prompt = st.chat_input("Ask something about your financial data")
+if prompt:
+    if not st.session_state.transactions:
+        st.warning("Please load data first.")
         st.stop()
-
-    if not user_query:
-        st.warning("Please enter a query")
-        st.stop()
+    st.session_state.chat_history.append({"role": "user", "content": prompt})
     state = {
-        "user_query": user_query,
-        "intent": "",
-        "transactions": transactions,
-        "risk_score": 0.0,
-        "response": "",
-        "memory": []
+        "user_query": prompt,
+        "transactions": st.session_state.transactions,
+        "memory": st.session_state.memory,
+        "trace": [],
+        "step": 0,
+        "max_steps": 3,
+        "done": False,
     }
-    final_state = app.invoke(state)
-    st.subheader("📊 Result")
-    st.write(final_state["response"])
+    with st.spinner("Running LangGraph..."):
+        final_state = app.invoke(state)
+    response = final_state.get("response", "No response generated.")
+    st.session_state.memory = final_state.get("memory", [])
+    st.session_state.chat_history.append({"role": "assistant", "content": response})
+    st.rerun()
