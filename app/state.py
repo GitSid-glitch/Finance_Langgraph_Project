@@ -15,3 +15,6 @@ class FinanceState(TypedDict, total=False):
     observation: str
     response: str
     memory: List[Dict[str, str]]
+    schema: Dict[str, str]
+    plan: List[Dict[str, Any]]
+    execution_result: Any
