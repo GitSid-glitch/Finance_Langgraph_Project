@@ -1,30 +1,22 @@
 import pandas as pd
 import numpy as np
-def build_summary(transactions):
+def build_summary(transactions, schema):
+    import pandas as pd
     df = pd.DataFrame(transactions)
-    if df.empty or "amount" not in df:
-        return {"transaction_count": 0}
-    df["amount"] = pd.to_numeric(df["amount"], errors="coerce")
-    df = df.dropna(subset=["amount"])
+    amount_col = "amount"
+    category_col = "category"
+    if df.empty or amount_col not in df:
+        return {}
+    df[amount_col] = pd.to_numeric(df[amount_col], errors="coerce")
+    df = df.dropna(subset=[amount_col])
     summary = {
-        "transaction_count": len(df),
-        "total_amount": float(df["amount"].sum()),
-        "average_amount": float(df["amount"].mean()),
-        "median_amount": float(df["amount"].median()),
-        "min_amount": float(df["amount"].min()),
-        "max_amount": float(df["amount"].max()),
-        "has_type": "type" in df.columns,
-        "has_date": "date" in df.columns,
-        "has_category": "category" in df.columns,
+        "total": float(df[amount_col].sum()),
+        "average": float(df[amount_col].mean()),
     }
-    if summary["has_type"]:
-        credit = df[df["type"] == "credit"]["amount"].sum()
-        debit = df[df["type"] == "debit"]["amount"].sum()
-
-        summary["credit_total"] = float(credit)
-        summary["debit_total"] = float(debit)
-        summary["profit"] = float(credit - debit)
-
+    if category_col in df:
+        grouped = df.groupby(category_col)[amount_col].sum().sort_values()
+        summary["category_rank"] = grouped.to_dict()
+        summary["top_category"] = grouped.idxmax()
     return summary
 
 
