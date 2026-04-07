@@ -8,6 +8,8 @@ load_dotenv()
 st.set_page_config(page_title="Finance LangGraph Assistant", layout="wide")
 if "transactions" not in st.session_state:
     st.session_state.transactions = []
+if "schema" not in st.session_state:
+    st.session_state.schema = {}
 if "memory" not in st.session_state:
     st.session_state.memory = []
 if "chat_history" not in st.session_state:
@@ -16,6 +18,7 @@ if "chat_history" not in st.session_state:
 def get_graph():
     return build_graph()
 app = get_graph()
+
 st.title("💰 Finance LangGraph Assistant")
 st.caption("Iterative planner–executor graph for financial reasoning.")
 with st.sidebar:
@@ -39,11 +42,14 @@ with st.sidebar:
 def reset_for_new_data():
     st.session_state.memory = []
     st.session_state.chat_history = []
+
 if load_file and uploaded_file is not None:
     try:
-        st.session_state.transactions = parse_file(uploaded_file)
+        transactions, schema = parse_file(uploaded_file)
+        st.session_state.transactions = transactions
+        st.session_state.schema = schema
         reset_for_new_data()
-        st.sidebar.success(f"Loaded {len(st.session_state.transactions)} transactions.")
+        st.sidebar.success(f"Loaded {len(transactions)} transactions.")
     except Exception as e:
         st.sidebar.error(f"File load failed: {e}")
 
@@ -56,21 +62,28 @@ if load_manual and manual_text.strip():
                 if key in raw and isinstance(raw[key], list):
                     raw = raw[key]
                     break
+
         if not isinstance(raw, list):
-            raise ValueError("Paste a JSON list or a JSON object containing a transactions list.")
-        st.session_state.transactions = dataframe_to_transactions(pd.DataFrame(raw))
+            raise ValueError("Paste a JSON list or object with transactions list.")
+
+        transactions, schema = dataframe_to_transactions(pd.DataFrame(raw))
+
+        st.session_state.transactions = transactions
+        st.session_state.schema = schema
+
         reset_for_new_data()
-        st.sidebar.success(f"Loaded {len(st.session_state.transactions)} transactions.")
+
+        st.sidebar.success(f"Loaded {len(transactions)} transactions.")
     except Exception as e:
         st.sidebar.error(f"JSON load failed: {e}")
-
 if st.session_state.transactions:
     with st.expander("Preview loaded data", expanded=False):
         st.write(f"Transactions loaded: {len(st.session_state.transactions)}")
         st.json(st.session_state.transactions[:10])
+    with st.expander("Detected Schema", expanded=False):
+        st.json(st.session_state.get("schema", {}))
 else:
     st.info("Load a file or paste JSON to begin.")
-
 for msg in st.session_state.chat_history:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
@@ -88,6 +101,7 @@ if prompt:
         "step": 0,
         "max_steps": 3,
         "done": False,
+        "schema": st.session_state.get("schema", {}) or {},
     }
     with st.spinner("Running LangGraph..."):
         final_state = app.invoke(state)
