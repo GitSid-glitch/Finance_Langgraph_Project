@@ -9,71 +9,53 @@ def _extract_json(text: str) -> Dict[str, Any]:
     if start == -1 or end == -1 or end <= start:
         return {}
     try:
-        return json.loads(text[start : end + 1])
+        return json.loads(text[start:end + 1])
     except Exception:
         return {}
 def planner_agent(state: FinanceState) -> FinanceState:
     query = state.get("user_query", "")
-    profile = state.get("profile", {})
-    trace = state.get("trace", [])
-
-    last_action = trace[-1]["action"] if trace else None
-
+    schema = state.get("schema", {})
     prompt = f"""
-You are the planner in a financial reasoning graph.
+You are a financial data planner.
 
-Return JSON only. No markdown. No extra text.
+Return ONLY valid JSON.
 
-Choose exactly one next_action:
-summary, risk, what_if, qa, clarify, final
+Your job:
+Convert the user query into a sequence of data operations.
 
-Use these rules:
-- summary: totals, spending, profit, income, expense, category breakdown, trend
-- risk: suspicious, fraud, anomalous, unusual, outlier, suspicious activity
-- what_if: remove, reduce, compare after change, simulate, what happens if
-- qa: give a grounded answer using the available facts
-- clarify: important data is missing
-- final: you already have enough evidence from prior tool outputs
+Available tools:
 
-Do not repeat the same tool action twice unless new evidence clearly justifies it.
-Prefer a short chain of at most 3 tool calls.
+1. groupby → {{"by": ["column"]}}
+2. aggregate → {{"op": "sum" | "mean"}}
+3. sort → {{"ascending": true | false}}
+4. select_top → {{"n": number}}
+5. filter → {{"column": "...", "value": "..."}}
 
-Available profile:
-{json.dumps(profile, ensure_ascii=False, indent=2)}
+IMPORTANT RULES:
+- Use ONLY columns from schema
+- "amount" is the metric column
+- "select_top n=5" means return ONLY the 5th element (NOT top 5)
+- Keep plan minimal and logical
 
-Previous trace:
-{json.dumps(trace, ensure_ascii=False, indent=2)}
+Schema:
+{json.dumps(schema, indent=2)}
 
 User query:
 {query}
 
-Return schema:
+Return format:
 {{
-  "next_action": "summary|risk|what_if|qa|clarify|final",
-  "operation": "remove_largest|remove_top_n|reduce_largest_percent|compare_average_vs_highest|compare_after_removal|none",
-  "parameters": {{}},
-  "clarification_question": "only if clarify",
-  "why": "short reason"
+  "plan": [
+    {{"tool": "groupby", "params": {{...}}}}
+  ]
 }}
 """
-
     raw = llm.invoke(prompt).content
     data = _extract_json(raw)
-
-    next_action = data.get("next_action", "qa")
-    operation = data.get("operation", "none")
-    parameters = data.get("parameters", {})
-    clarification_question = data.get("clarification_question", "")
-
-    if next_action not in {"summary", "risk", "what_if", "qa", "clarify", "final"}:
-        next_action = "qa"
-
-    if next_action == last_action and next_action in {"summary", "risk", "what_if"}:
-        next_action = "final"
-
-    state["next_action"] = next_action
-    state["operation"] = operation
-    state["parameters"] = parameters if isinstance(parameters, dict) else {}
-    state["clarification_question"] = clarification_question
-
+    plan = data.get("plan", [])
+    if not isinstance(plan, list) or not plan:
+        plan = [
+            {"tool": "aggregate", "params": {"op": "sum"}}
+        ]
+    state["plan"] = plan
     return state
